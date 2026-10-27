@@ -1,0 +1,1279 @@
+<!doctype html>
+<html lang="es" data-tema="oscuro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat de clase</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232547c7'/%3E%3Cpath d='M8 11h16M8 16h16M8 21h10' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
+<script>
+// El tema se decide antes de pintar nada, para que no parpadee.
+(function () {
+  var tema = null;
+  try { tema = localStorage.getItem("tema"); } catch (e) {}
+  if (tema !== "claro" && tema !== "oscuro") {
+    tema = window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches ? "claro" : "oscuro";
+  }
+  document.documentElement.dataset.tema = tema;
+})();
+</script>
+<style>
+:root {
+  --fuente: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+  --titulo: "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --codigo-fuente: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  --margen: 76px;      /* ancho de la columna de horas, a la izquierda de la línea roja */
+  --renglon: 24px;     /* alto de cada renglón del cuaderno */
+}
+:root[data-tema="claro"] {
+  color-scheme: light;
+  --papel: #f8fafd;  --linea: #e1e8f3;  --margen-linea: #e48a97;
+  --riel: #edf1f8;   --superficie: #ffffff;  --borde: #d2dbeb;
+  --texto: #1a2130;  --suave: #5f6b83;
+  --tinta: #2547c7;  --tinta-texto: #ffffff;
+  --marcador: #ffe34d;  --marcador-texto: #1a1a1a;
+  --codigo: #e6ecf7;  --ok: #1d8f50;  --aviso: #b97500;  --error: #c2263a;
+  --papel-priv: #fbf4fa;  --linea-priv: #f0e2ee;
+  --contraste: 4;
+}
+:root[data-tema="oscuro"] {
+  color-scheme: dark;
+  --papel: #12161e;  --linea: #1b212c;  --margen-linea: #9e485c;
+  --riel: #0d1117;   --superficie: #171c26;  --borde: #252d3b;
+  --texto: #e5eaf4;  --suave: #8e9ab0;
+  --tinta: #86a5ff;  --tinta-texto: #0b1020;
+  --marcador: #f0cf3a;  --marcador-texto: #14161b;
+  --codigo: #1d2534;  --ok: #4cc38a;  --aviso: #e9b44c;  --error: #ff7b8d;
+  --papel-priv: #181420;  --linea-priv: #231c2d;
+  --contraste: 4.5;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--riel); color: var(--texto);
+  font: 15px/24px var(--fuente); -webkit-font-smoothing: antialiased;
+}
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--tinta); outline-offset: 2px; }
+h1, h2 { margin: 0; font-weight: 600; }
+
+/* ------------------------------------------------------------ entrada */
+.entrada-vista {
+  min-height: 100dvh; display: grid; place-items: center; padding: 24px;
+  background-color: var(--papel);
+  background-image: linear-gradient(to bottom, transparent 23px, var(--linea) 23px);
+  background-size: 100% var(--renglon);
+}
+.login {
+  width: min(400px, 100%); padding: 32px 32px 28px; background: var(--superficie);
+  border: 1px solid var(--borde); border-radius: 8px;
+}
+.login h1 { font: 600 30px/36px var(--titulo); font-variation-settings: "wdth" 88; margin-bottom: 4px; }
+.login p { margin: 0 0 24px; color: var(--suave); }
+.campo { display: block; margin-bottom: 20px; }
+.campo span { display: block; font-size: 13px; color: var(--suave); }
+.campo input {
+  width: 100%; padding: 6px 0; border: 0; border-bottom: 2px solid var(--borde);
+  background: transparent; border-radius: 0; outline: none;
+}
+.campo input:focus { border-bottom-color: var(--tinta); }
+.campo small { display: block; margin-top: 4px; font-size: 12.5px; line-height: 18px; color: var(--suave); }
+.error { min-height: 24px; margin: 0 0 8px; color: var(--error); }
+.principal {
+  border: 0; border-radius: 6px; padding: 8px 20px; font-weight: 600;
+  background: var(--tinta); color: var(--tinta-texto);
+}
+.principal:disabled { opacity: .6; cursor: default; }
+
+/* ------------------------------------------------------------ estructura */
+.app { display: grid; grid-template-columns: 280px minmax(0, 1fr) auto; height: 100dvh; }
+
+.riel { display: flex; flex-direction: column; min-height: 0; background: var(--riel); border-right: 1px solid var(--borde); }
+.marca { padding: 16px 16px 12px; }
+.marca h1 { font: 600 22px/28px var(--titulo); font-variation-settings: "wdth" 88; }
+.estado { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--suave); }
+.estado::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.estado[data-e="reconectando"]::before { background: var(--aviso); }
+.estado[data-e="fuera"]::before { background: var(--error); }
+
+.riel h2 { padding: 12px 16px 4px; font-size: 13px; line-height: 20px; color: var(--suave); }
+.riel-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.lista { list-style: none; margin: 0; padding: 0; }
+.conv-fila, .persona { position: relative; display: flex; align-items: center; }
+.conv-abrir, .persona-boton {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; text-align: left;
+  padding: 4px 16px; border: 0; background: none; border-radius: 0;
+}
+.conv-abrir span.nombre, .persona-boton span.nombre { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.conv-fila:hover, .persona:hover { background: var(--superficie); }
+.conv-fila[aria-current="true"] { background: var(--superficie); font-weight: 600; }
+.conv-fila[aria-current="true"]::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--tinta); }
+.conv-cerrar {
+  border: 0; background: none; color: var(--suave); width: 28px; height: 28px; margin-right: 8px;
+  border-radius: 4px; opacity: 0;
+}
+.conv-fila:hover .conv-cerrar, .conv-cerrar:focus-visible { opacity: 1; }
+.conv-cerrar:hover { background: var(--codigo); color: var(--texto); }
+.insignia {
+  min-width: 20px; padding: 0 6px; border-radius: 10px; font-size: 12px; line-height: 20px; text-align: center;
+  background: var(--tinta); color: var(--tinta-texto); font-weight: 600;
+}
+.insignia.ping { background: var(--marcador); color: var(--marcador-texto); }
+.punto { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.persona-boton[disabled] { cursor: default; color: var(--suave); }
+.pista { margin: 4px 16px 12px; font-size: 12.5px; line-height: 18px; color: var(--suave); }
+
+.yo { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--borde); }
+.yo strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.color-etiqueta { position: relative; }
+.color-etiqueta input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+
+.boton {
+  border: 1px solid var(--borde); background: var(--superficie); border-radius: 6px; padding: 4px 12px;
+  white-space: nowrap;
+}
+.boton:hover { background: var(--codigo); }
+select.boton { padding-right: 6px; }
+.icono { width: 20px; height: 20px; display: block; }
+
+.centro { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--papel); }
+.barra {
+  display: flex; align-items: center; gap: 12px; padding: 12px 20px; background: var(--superficie);
+  border-bottom: 1px solid var(--borde);
+}
+.titulo-conv { flex: 1; min-width: 0; }
+.titulo-conv h1 { font: 600 20px/26px var(--titulo); font-variation-settings: "wdth" 88; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.titulo-conv p { margin: 0; font-size: 13px; line-height: 18px; color: var(--suave); }
+.acciones { display: flex; align-items: center; gap: 8px; }
+.solo-movil { display: none; }
+
+/* la hoja: renglones que se mueven con el texto y margen fijo */
+.pliego { position: relative; flex: 1; min-height: 0; display: flex; }
+.hoja {
+  flex: 1; overflow-y: auto; padding: var(--renglon) 20px var(--renglon) 0; overscroll-behavior: contain;
+  background-color: var(--papel);
+  background-image:
+    linear-gradient(to bottom, transparent 23px, var(--linea) 23px),
+    linear-gradient(to right, transparent calc(var(--margen) - 2px), var(--margen-linea) calc(var(--margen) - 2px),
+      var(--margen-linea) var(--margen), transparent var(--margen));
+  background-size: 100% var(--renglon), 100% 100%;
+  background-repeat: repeat-y, no-repeat;
+  background-attachment: local, scroll;
+}
+.hoja[data-privado="1"] { --papel: var(--papel-priv); --linea: var(--linea-priv); }
+.fila { display: grid; grid-template-columns: var(--margen) minmax(0, 1fr); }
+.hora {
+  padding-right: 12px; text-align: right; font-size: 12.5px; color: var(--suave);
+  font-variant-numeric: tabular-nums; user-select: none;
+}
+.cuerpo { padding-left: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.quien { font-weight: 700; margin-right: 6px; }
+.fila.sis .cuerpo { color: var(--suave); font-style: italic; font-size: 14px; }
+.fila.ping { box-shadow: inset 4px 0 0 var(--marcador); }
+.mencion, .mencion-yo {
+  padding: 0 3px; border-radius: 2px; font-weight: 600;
+  background: linear-gradient(transparent 18%, color-mix(in srgb, var(--marcador) 45%, transparent) 18%, color-mix(in srgb, var(--marcador) 45%, transparent) 90%, transparent 90%);
+}
+.mencion-yo { background: linear-gradient(transparent 12%, var(--marcador) 12%, var(--marcador) 92%, transparent 92%); color: var(--marcador-texto); }
+code {
+  font: .92em var(--codigo-fuente); background: var(--codigo); padding: 1px 5px; border-radius: 3px;
+}
+.cuerpo a { color: var(--tinta); text-underline-offset: 2px; }
+/* bloques de código de los mensajes */
+.bloque { position: relative; margin: 0; white-space: normal; }
+.bloque pre {
+  margin: 0; padding: 0 12px; background: var(--codigo); border-left: 3px solid var(--tinta); border-radius: 3px;
+  font: 13px/24px var(--codigo-fuente); tab-size: 4; white-space: pre; overflow-x: auto;
+}
+.copiar {
+  position: absolute; top: 0; right: 6px; padding: 0 8px; border: 1px solid var(--borde); border-radius: 4px;
+  background: var(--superficie); font-size: 12.5px; line-height: 20px; margin-top: 2px; opacity: 0;
+}
+.bloque:hover .copiar, .copiar:focus-visible { opacity: 1; }
+.recordar { display: flex; align-items: center; gap: 8px; margin: -4px 0 4px; font-size: 14px; }
+.recordar input { width: 16px; height: 16px; accent-color: var(--tinta); }
+.nuevos {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  padding: 4px 16px; border-radius: 16px; border: 0; background: var(--tinta); color: var(--tinta-texto); font-weight: 600;
+}
+
+.escribir { display: flex; align-items: flex-end; gap: 8px; padding: 12px 16px; background: var(--superficie); border-top: 1px solid var(--borde); }
+.escribir textarea {
+  flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--borde); border-radius: 6px; background: var(--papel);
+  font: inherit; line-height: 24px; resize: none; display: block; height: 44px; max-height: 212px; overflow-y: auto;
+}
+.escribir textarea:focus { outline: 2px solid var(--tinta); outline-offset: -1px; border-color: transparent; }
+.escribir .principal { padding: 0 20px; height: 44px; }
+
+/* ------------------------------------------------------------ archivos */
+.archivos {
+  width: 380px; display: flex; flex-direction: column; min-height: 0; background: var(--riel);
+  border-left: 1px solid var(--borde);
+}
+.archivos header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--borde); }
+.archivos header h2 { font: 600 18px/26px var(--titulo); font-variation-settings: "wdth" 88; }
+.subir { padding: 12px 16px; border-bottom: 1px solid var(--borde); }
+.subir p { margin: 8px 0 0; font-size: 12.5px; line-height: 18px; color: var(--suave); }
+.subir progress { width: 100%; height: 6px; margin-top: 8px; accent-color: var(--tinta); }
+.lista-archivos { max-height: 34%; overflow-y: auto; }
+.archivo { display: flex; align-items: center; gap: 10px; width: 100%; padding: 4px 16px; border: 0; background: none; text-align: left; border-radius: 0; }
+.archivo:hover { background: var(--superficie); }
+.archivo[aria-current="true"] { background: var(--superficie); font-weight: 600; }
+.archivo .ext {
+  flex: none; min-width: 44px; padding: 0 6px; border-radius: 3px; background: var(--codigo);
+  font: 12px/20px var(--codigo-fuente); text-align: center;
+}
+.archivo .nombre { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archivo .tam { font-size: 12.5px; color: var(--suave); }
+.vacio { padding: 12px 16px; color: var(--suave); }
+.vista { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--borde); background: var(--papel); }
+.vista-barra { display: flex; align-items: center; gap: 8px; padding: 8px 16px; }
+.vista-barra strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vista-cuerpo { flex: 1; min-height: 0; overflow: auto; padding: 0 16px 16px; }
+.vista-cuerpo img { max-width: 100%; height: auto; display: block; border: 1px solid var(--borde); border-radius: 4px; }
+.vista-cuerpo pre {
+  margin: 0; font: 13px/20px var(--codigo-fuente); tab-size: 4; white-space: pre; background: var(--superficie);
+  border: 1px solid var(--borde); border-radius: 4px; padding: 8px 12px; overflow: auto;
+}
+
+.soltar {
+  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--riel) 88%, transparent); font: 600 22px var(--titulo); border: 3px dashed var(--tinta);
+}
+
+/* ------------------------------------------------------------ móvil */
+@media (max-width: 860px) {
+  :root { --margen: 54px; }
+  .app { grid-template-columns: minmax(0, 1fr); }
+  .riel {
+    position: fixed; inset: 0 auto 0 0; z-index: 10; width: min(300px, 86vw); transform: translateX(-102%);
+    transition: transform .18s ease; box-shadow: 2px 0 16px rgba(0, 0, 0, .25);
+  }
+  .riel.abierto { transform: none; }
+  .solo-movil { display: inline-flex; }
+  .barra { padding: 10px 12px; flex-wrap: wrap; }
+  .titulo-conv { flex-basis: 0; min-width: 120px; }
+  .acciones { flex: 0 0 100%; order: 3; min-width: 0; max-width: 100%; }
+  .acciones select { width: 0; }
+  .acciones select { flex: 1; min-width: 0; max-width: none; }
+  .archivos { position: fixed; inset: 0; z-index: 12; width: auto; border-left: 0; }
+  .lista-archivos { max-height: 30%; }
+  .hora { padding-right: 8px; font-size: 11.5px; }
+  .boton .texto-boton { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ entrada -->
+<main id="vista-login" class="entrada-vista">
+  <form id="form-login" class="login" autocomplete="off">
+    <h1>Chat de clase</h1>
+    <p>Escribe la contraseña de clase para entrar.</p>
+    <label class="campo">
+      <span>Contraseña</span>
+      <input id="login-clave" type="password" required autocomplete="current-password">
+    </label>
+    <label class="campo" id="campo-nombre">
+      <span>Nombre</span>
+      <input id="login-nombre" type="text" maxlength="20" autocomplete="nickname">
+      <small id="nota-nombre">Solo hace falta si el servidor aún no sabe quién eres. Si no, déjalo vacío.</small>
+    </label>
+    <label class="recordar"><input id="login-recordar" type="checkbox"><span>Recordar en este equipo</span></label>
+    <p class="pista" style="margin: 0 0 12px">Guarda la contraseña en este navegador. Úsalo solo en tu portátil, no en los ordenadores compartidos.</p>
+    <p id="login-error" class="error" role="alert"></p>
+    <button id="login-boton" class="principal" type="submit">Entrar</button>
+  </form>
+</main>
+
+<!-- ============================================================ chat -->
+<div id="app" class="app" hidden>
+  <aside id="riel" class="riel" aria-label="Conversaciones y personas">
+    <div class="marca">
+      <h1>Chat de clase</h1>
+      <span id="estado" class="estado" data-e="linea">En línea</span>
+    </div>
+    <div class="riel-scroll">
+      <h2>Conversaciones</h2>
+      <ul id="lista-convs" class="lista"></ul>
+      <h2>Conectados</h2>
+      <ul id="lista-personas" class="lista"></ul>
+      <p class="pista">Haz clic en un nombre para escribirle en privado.</p>
+    </div>
+    <div class="yo">
+      <strong id="yo-nombre"></strong>
+      <button id="btn-salir" class="boton" type="button">Salir</button>
+      <label class="boton color-etiqueta">Color
+        <input id="color-input" type="color" aria-label="Elegir el color de tu nombre">
+      </label>
+    </div>
+  </aside>
+
+  <main class="centro">
+    <header class="barra">
+      <button id="btn-riel" class="boton solo-movil" type="button" aria-label="Abrir conversaciones">
+        <svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="titulo-conv">
+        <h1 id="titulo-conv">General</h1>
+        <p id="subtitulo-conv"></p>
+      </div>
+      <div class="acciones">
+        <select id="notif" class="boton" aria-label="Avisos">
+          <option value="todo">Avisos: todo</option>
+          <option value="pings">Avisos: menciones y privados</option>
+          <option value="nada">Avisos: ninguno</option>
+        </select>
+        <button id="btn-tema" class="boton" type="button">Tema</button>
+        <button id="btn-archivos" class="boton" type="button">Archivos</button>
+      </div>
+    </header>
+
+    <div class="pliego">
+      <div id="hoja" class="hoja" role="log" aria-live="polite" tabindex="0"></div>
+      <button id="btn-nuevos" class="nuevos" type="button" hidden>Mensajes nuevos</button>
+    </div>
+
+    <form id="form-enviar" class="escribir" autocomplete="off">
+      <textarea id="entrada" rows="1" maxlength="2000" aria-label="Mensaje" placeholder="Escribe en General"></textarea>
+      <button class="principal" type="submit">Enviar</button>
+    </form>
+  </main>
+
+  <aside id="panel-archivos" class="archivos" hidden aria-label="Archivos compartidos">
+    <header>
+      <h2>Archivos</h2>
+      <button id="cerrar-archivos" class="boton" type="button" aria-label="Cerrar archivos">
+        <svg class="icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="subir">
+      <button id="btn-subir" class="boton" type="button">Subir un archivo</button>
+      <input id="input-archivo" type="file" accept=".py,.java,.txt,.jpg,.png" hidden>
+      <p id="estado-subida">También puedes soltarlo en cualquier parte de la ventana. Admite .py, .java, .txt, .jpg y .png de hasta 10 MB.</p>
+      <progress id="progreso" max="1" value="0" hidden></progress>
+    </div>
+    <div id="lista-archivos" class="lista-archivos"></div>
+    <section id="vista" class="vista" hidden>
+      <div class="vista-barra">
+        <strong id="vista-nombre"></strong>
+        <a id="vista-descargar" class="boton" href="#">Descargar</a>
+      </div>
+      <div id="vista-cuerpo" class="vista-cuerpo"></div>
+    </section>
+  </aside>
+</div>
+
+<div id="soltar" class="soltar" hidden>Suelta el archivo para subirlo</div>
+
+<noscript>Esta página necesita JavaScript.</noscript>
+
+<script>
+"use strict";
+
+/* =============================================================== constantes */
+const $ = (id) => document.getElementById(id);
+const MAX_MSG = 2000;
+const NL = "\u21b5";   // los saltos de línea viajan como ↵ porque el protocolo es una línea por mensaje
+const ANCHO_INVISIBLE = "\u200b";   // evita que un código que empieza por / se tome por comando
+const MAX_ARCHIVO = 10 * 1024 * 1024;
+const EXTENSIONES = [".py", ".java", ".txt", ".jpg", ".png"];
+const PALETA = ["#0b7285", "#9c36b5", "#c92a2a", "#e67700", "#2b8a3e", "#1864ab", "#a61e4d", "#5f3dc4"];
+const GENERAL = "#general";
+const MAX_FILAS = 500;
+
+const RE_CHAT = /^\[(\d\d:\d\d)\] ([^:]+): (.*)$/;
+const RE_PRIV = /^\[(\d\d:\d\d)\] \(privado\) (de|para) ([^:]+): (.*)$/;
+const RE_HOLA = /^Hola (.+?), ya estás en el chat/;
+const RE_NICK = /^\*\*\* (.+?) ahora se llama (.+?) \*\*\*$/;
+const RE_CONEXION = /^\*\*\* (.+?) se ha (conectado|desconectado) \*\*\*$/;
+const RE_SUBIDA = /^\*\*\* .+ ha subido el archivo .+ \*\*\*$/;
+const RE_RECIBIDO = /^\*\*\* Archivo recibido y guardado/;
+const RE_NO_HAY = /^\*\*\* No hay nadie conectado llamado (.+) \*\*\*$/;
+const RE_AYUDA = /^\*\*\* Comandos: /;
+const RE_PIDE_NOMBRE = /^(Tu IP no tiene nombre asignado|El nombre no puede|Usa solo letras|Ese nombre está reservado)/;
+const CARACTER_NOMBRE = /[\p{L}\p{N}_]/u;
+
+const AYUDA = "Comandos: /usuarios  /nick nuevonombre  /color #RRGGBB  /silencio  /ayuda. " +
+  "Para escribir en privado haz clic en un nombre. Menciona a alguien con @nombre (Tab completa el nombre). " +
+  "Shift+Enter escribe otra línea. Para código usa `comillas invertidas` o un bloque con tres: ```  código  ``` (al pasar el ratón aparece Copiar). " +
+  "Con Ctrl+V puedes pegar una captura y se sube como archivo. Los archivos están en el botón Archivos.";
+
+/* =============================================================== estado */
+function leer(clave) { try { return localStorage.getItem(clave); } catch (e) { return null; } }
+function guardar(clave, valor) { try { localStorage.setItem(clave, valor); } catch (e) {} }
+
+const E = {
+  ws: null, quiere: false, entro: false, registrado: false,
+  clave: "", nombreElegido: "", nombreProbado: false, esperandoNombre: false,
+  nombre: "", token: "", colores: {},
+  convs: new Map(), activa: GENERAL,
+  archivos: {}, archivoSel: null,
+  notif: ["todo", "pings", "nada"].includes(leer("notif")) ? leer("notif") : "todo",
+  historial: [], pos: 0, compl: null,
+  cargandoHist: false, reconectado: false, recordar: false,
+  reintentos: 0, timerReintento: null, latido: null, sinLeerTitulo: 0, nuevos: 0,
+};
+
+function crearConv(clave, nombre, privado) {
+  const c = { clave, nombre, privado, mensajes: [], sinLeer: 0, ping: false, abierta: true };
+  E.convs.set(clave, c);
+  return c;
+}
+crearConv(GENERAL, "General", false);
+
+const claveDe = (nombre) => nombre.toLowerCase();
+const ahora = () => new Date().toTimeString().slice(0, 5);
+
+/* =============================================================== helpers de DOM */
+function el(etiqueta, clase, texto) {
+  const e = document.createElement(etiqueta);
+  if (clase) e.className = clase;
+  if (texto !== undefined) e.textContent = texto;
+  return e;
+}
+
+/* =============================================================== colores */
+function luminancia(hex) {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map((v) => (v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4)));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function contraste(a, b) {
+  const la = luminancia(a), lb = luminancia(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+/** Mismo tono, oscurecido (papel claro) o aclarado (papel oscuro) lo justo para que se lea. */
+function ajustarColor(hex, fondo, minimo) {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return null;
+  if (contraste(hex, fondo) >= minimo) return hex;
+  const oscuro = luminancia(fondo) < 0.5;
+  const canales = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  for (let paso = 0; paso <= 100; paso += 2) {
+    const f = paso / 100;
+    const nuevo = "#" + canales.map((c) => {
+      const v = oscuro ? Math.round(c + (255 - c) * f) : Math.round(c * (1 - f));
+      return v.toString(16).padStart(2, "0");
+    }).join("");
+    if (contraste(nuevo, fondo) >= minimo) return nuevo;
+  }
+  return oscuro ? "#adb5bd" : "#495057";
+}
+function estilo(variable) { return getComputedStyle(document.documentElement).getPropertyValue(variable).trim(); }
+function colorDe(nombre) {
+  let base = E.colores[nombre];
+  if (!/^#[0-9a-f]{6}$/i.test(base || "")) {
+    let h = 0;
+    for (const ch of nombre.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    base = PALETA[h % PALETA.length];
+  }
+  return ajustarColor(base, estilo("--papel"), parseFloat(estilo("--contraste")) || 4) || base;
+}
+
+/* =============================================================== texto: código, enlaces y menciones */
+function nombresConocidos() {
+  const lista = new Set(Object.keys(E.colores));
+  if (E.nombre) lista.add(E.nombre);
+  for (const c of E.convs.values()) if (c.privado) lista.add(c.nombre);
+  return [...lista];
+}
+const nombreBase = (n) => n.replace(/ \(.*\)$/, "");
+const esYo = (n) => !!E.nombre && n.toLowerCase() === E.nombre.toLowerCase();
+
+/** Parte un trozo de texto en menciones y texto normal. Devuelve [{t, tipo}]. */
+function partirMenciones(texto, anterior) {
+  const alias = new Map();
+  for (const n of nombresConocidos()) {
+    alias.set(n.toLowerCase(), n);
+    if (!alias.has(nombreBase(n).toLowerCase())) alias.set(nombreBase(n).toLowerCase(), n);
+  }
+  const candidatos = [...alias.keys()].sort((a, b) => b.length - a.length);
+  const trozos = [];
+  let inicio = 0, i = 0;
+  while (i < texto.length) {
+    const previo = i === 0 ? (anterior || "") : texto[i - 1];
+    if (texto[i] === "@" && !(previo && CARACTER_NOMBRE.test(previo.slice(-1)))) {
+      let hallado = null;
+      for (const c of candidatos) {
+        const fin = i + 1 + c.length;
+        if (texto.slice(i + 1, fin).toLowerCase() === c && (fin >= texto.length || !CARACTER_NOMBRE.test(texto[fin]))) {
+          hallado = { fin, real: alias.get(c) };
+          break;
+        }
+      }
+      if (hallado) {
+        if (i > inicio) trozos.push({ t: texto.slice(inicio, i), tipo: "texto" });
+        trozos.push({ t: texto.slice(i, hallado.fin), tipo: esYo(hallado.real) ? "yo" : "mencion" });
+        inicio = i = hallado.fin;
+        continue;
+      }
+    }
+    i++;
+  }
+  if (inicio < texto.length) trozos.push({ t: texto.slice(inicio), tipo: "texto" });
+  return trozos;
+}
+
+/** Texto del mensaje -> trozos con tipo: texto, mencion, yo, codigo, enlace. */
+function trocear(texto) {
+  const salida = [];
+  const partes = texto.split(/`([^`]+)`/);   // posiciones impares: código
+  partes.forEach((parte, i) => {
+    if (!parte) return;
+    if (i % 2 === 1) { salida.push({ t: parte, tipo: "codigo" }); return; }
+    let ultimo = 0, anterior = "";
+    for (const m of parte.matchAll(/https?:\/\/[^\s<>"']+/g)) {
+      if (m.index > ultimo) {
+        const t = parte.slice(ultimo, m.index);
+        salida.push(...partirMenciones(t, anterior));
+        anterior = t.slice(-1);
+      }
+      salida.push({ t: m[0], tipo: "enlace" });
+      anterior = "";
+      ultimo = m.index + m[0].length;
+    }
+    if (ultimo < parte.length) salida.push(...partirMenciones(parte.slice(ultimo), anterior));
+  });
+  return salida;
+}
+function copiarAntiguo(texto) {
+  const a = document.createElement("textarea");
+  a.value = texto; a.style.position = "fixed"; a.style.opacity = "0";
+  document.body.append(a); a.select();
+  let hecho = false;
+  try { hecho = document.execCommand("copy"); } catch (e) {}
+  a.remove();
+  return hecho;
+}
+function copiarTexto(texto, boton) {
+  const listo = () => { boton.textContent = "Copiado"; setTimeout(() => { boton.textContent = "Copiar"; }, 1500); };
+  // navigator.clipboard solo existe en páginas seguras (https); por http hace falta el método antiguo
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(texto).then(listo, () => { if (copiarAntiguo(texto)) listo(); });
+  } else if (copiarAntiguo(texto)) listo();
+}
+function bloqueCodigo(codigo) {
+  const caja = el("div", "bloque");
+  const boton = el("button", "copiar", "Copiar");
+  boton.type = "button";
+  boton.addEventListener("click", () => copiarTexto(codigo, boton));
+  caja.append(el("pre", "", codigo), boton);
+  return caja;
+}
+const mencionaAlUsuario = (texto) => trocear(texto).some((p) => p.tipo === "yo");
+
+/** Texto del mensaje -> nodos. Los bloques ``` se dibujan aparte como código con botón Copiar. */
+function nodosMensaje(texto) {
+  texto = texto.split(NL).join("\n");
+  const nodos = [];
+  let ultimo = 0;
+  for (const m of texto.matchAll(/```(?:[\w+#.-]*\n)?([\s\S]*?)```/g)) {
+    const antes = texto.slice(ultimo, m.index).replace(/\n$/, "");
+    if (antes) nodos.push(...nodosTexto(antes));
+    nodos.push(bloqueCodigo(m[1].replace(/\n$/, "")));
+    ultimo = m.index + m[0].length;
+    if (texto[ultimo] === "\n") ultimo++;
+  }
+  const resto = texto.slice(ultimo);
+  if (resto) nodos.push(...nodosTexto(resto));
+  return nodos;
+}
+const plano = (texto) => texto.split(NL).join(" ");
+
+function nodosTexto(texto) {
+  return trocear(texto).map((p) => {
+    if (p.tipo === "texto") return document.createTextNode(p.t);
+    if (p.tipo === "codigo") return el("code", "", p.t);
+    if (p.tipo === "enlace") {
+      const a = el("a", "", p.t);
+      a.href = p.t; a.target = "_blank"; a.rel = "noopener noreferrer";
+      return a;
+    }
+    return el("span", p.tipo === "yo" ? "mencion-yo" : "mencion", p.t);
+  });
+}
+
+/* =============================================================== pintar */
+function pintarFila(m, previo) {
+  const fila = el("div", "fila " + (m.tipo === "msg" ? "msg" : "sis") + (m.ping ? " ping" : ""));
+  fila.append(el("span", "hora", !previo || previo.hora !== m.hora ? m.hora : ""));
+  const cuerpo = el("span", "cuerpo");
+  if (m.tipo === "msg") {
+    const quien = el("span", "quien", m.yo ? "Tú" : m.quien);
+    quien.style.color = colorDe(m.yo ? E.nombre : m.quien);
+    cuerpo.append(quien, ...nodosMensaje(m.texto));
+  } else {
+    cuerpo.textContent = m.texto;
+  }
+  fila.append(cuerpo);
+  return fila;
+}
+
+function pintarHoja() {
+  const c = E.convs.get(E.activa);
+  const hoja = $("hoja");
+  hoja.dataset.privado = c.privado ? "1" : "0";
+  hoja.replaceChildren();
+  let previo = null;
+  for (const m of c.mensajes) { hoja.append(pintarFila(m, previo)); previo = m; }
+  hoja.scrollTop = hoja.scrollHeight;
+  E.nuevos = 0;
+  $("btn-nuevos").hidden = true;
+}
+
+function pintarConversaciones() {
+  const ul = $("lista-convs");
+  ul.replaceChildren();
+  for (const c of E.convs.values()) {
+    if (c.privado && !c.abierta) continue;
+    const li = el("li", "conv-fila");
+    if (c.clave === E.activa) li.setAttribute("aria-current", "true");
+    const abrir = el("button", "conv-abrir");
+    abrir.type = "button";
+    abrir.append(el("span", "nombre", c.privado ? c.nombre : "General"));
+    if (c.sinLeer) abrir.append(el("span", "insignia" + (c.ping ? " ping" : ""), String(c.sinLeer)));
+    abrir.addEventListener("click", () => cambiarConv(c.clave));
+    li.append(abrir);
+    if (c.privado) {
+      const x = el("button", "conv-cerrar", "×");
+      x.type = "button";
+      x.setAttribute("aria-label", "Cerrar la conversación con " + c.nombre);
+      x.addEventListener("click", () => cerrarConv(c.clave));
+      li.append(x);
+    }
+    ul.append(li);
+  }
+}
+
+function pintarPersonas() {
+  const ul = $("lista-personas");
+  ul.replaceChildren();
+  const nombres = Object.keys(E.colores).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  for (const n of nombres) {
+    const li = el("li", "persona");
+    const b = el("button", "persona-boton");
+    b.type = "button";
+    const punto = el("span", "punto");
+    punto.style.background = colorDe(n);
+    b.append(punto, el("span", "nombre", esYo(n) ? n + " (tú)" : n));
+    if (esYo(n)) b.disabled = true;
+    else b.addEventListener("click", () => abrirPrivado(n, true));
+    li.append(b);
+    ul.append(li);
+  }
+}
+
+function pintarCabecera() {
+  const c = E.convs.get(E.activa);
+  $("titulo-conv").textContent = c.privado ? c.nombre : "General";
+  const conectados = Object.keys(E.colores).length;
+  if (!c.privado) $("subtitulo-conv").textContent = conectados === 1 ? "1 conectado" : `${conectados} conectados`;
+  else {
+    const dentro = Object.keys(E.colores).some((n) => n.toLowerCase() === c.clave);
+    $("subtitulo-conv").textContent = dentro ? "Privado: solo vosotros dos" : "Privado: ahora no está conectado";
+  }
+  $("entrada").placeholder = (c.privado ? `Escribe a ${c.nombre} en privado` : "Escribe en General") + "  (Shift+Enter: nueva línea)";
+  $("yo-nombre").textContent = E.nombre;
+}
+
+function pintarTodo() {
+  pintarConversaciones(); pintarPersonas(); pintarCabecera(); pintarHoja();
+}
+
+/* =============================================================== conversaciones */
+function cambiarConv(clave) {
+  if (!E.convs.has(clave)) clave = GENERAL;
+  E.activa = clave;
+  const c = E.convs.get(clave);
+  c.sinLeer = 0; c.ping = false; c.abierta = true;
+  pintarTodo();
+  $("riel").classList.remove("abierto");
+  if (!matchMedia("(pointer: coarse)").matches) $("entrada").focus();
+}
+
+function abrirPrivado(nombre, activar) {
+  const clave = claveDe(nombre);
+  let c = E.convs.get(clave);
+  if (!c) {
+    c = crearConv(clave, nombre, true);
+    c.mensajes.push({ tipo: "sis", hora: ahora(), texto: `Conversación privada con ${nombre}: solo la veis vosotros dos` });
+  }
+  c.abierta = true;
+  if (activar) cambiarConv(clave); else pintarConversaciones();
+  return c;
+}
+
+function cerrarConv(clave) {
+  const c = E.convs.get(clave);
+  if (!c || !c.privado) return;
+  c.abierta = false;
+  if (E.activa === clave) cambiarConv(GENERAL); else pintarConversaciones();
+}
+
+function renombrarConv(viejo, nuevo) {
+  const c = E.convs.get(claveDe(viejo));
+  if (!c || E.convs.has(claveDe(nuevo))) return;
+  E.convs.delete(c.clave);
+  c.nombre = nuevo; c.clave = claveDe(nuevo);
+  E.convs.set(c.clave, c);
+  if (E.activa === claveDe(viejo)) E.activa = c.clave;
+}
+
+/** Añade un mensaje a una conversación y lo muestra si es la que se está mirando. */
+function nuevoMensaje(clave, m) {
+  const c = E.convs.get(clave);
+  if (!c) return;
+  const previo = c.mensajes[c.mensajes.length - 1] || null;
+  c.mensajes.push(m);
+  if (c.mensajes.length > MAX_FILAS) c.mensajes.shift();
+  if (c.privado && m.tipo === "msg") c.abierta = true;
+  if (clave === E.activa) {
+    const hoja = $("hoja");
+    const abajo = hoja.scrollHeight - hoja.scrollTop - hoja.clientHeight < 60;
+    hoja.append(pintarFila(m, previo));
+    while (hoja.children.length > MAX_FILAS) hoja.firstChild.remove();
+    if (abajo || m.yo) { hoja.scrollTop = hoja.scrollHeight; }
+    else if (m.tipo === "msg") { E.nuevos++; $("btn-nuevos").hidden = false; }
+  } else if (m.tipo === "msg" && !m.yo) {
+    c.sinLeer++;
+    c.ping = c.ping || !!m.ping;
+  }
+  pintarConversaciones();
+}
+
+function aviso(texto, clave) {   // mensaje del programa en la conversación indicada (o la activa)
+  nuevoMensaje(E.convs.has(clave) ? clave : E.activa, { tipo: "sis", hora: ahora(), texto });
+}
+function avisoGeneral(texto, tambienPrivado) {
+  nuevoMensaje(GENERAL, { tipo: "sis", hora: ahora(), texto });
+  if (tambienPrivado) {
+    const c = E.convs.get(claveDe(tambienPrivado));
+    if (c && c.privado && c.abierta) nuevoMensaje(c.clave, { tipo: "sis", hora: ahora(), texto });
+  }
+}
+
+/* =============================================================== conexión */
+function enviar(linea) {
+  if (E.ws && E.ws.readyState === WebSocket.OPEN) { E.ws.send(linea); return true; }
+  return false;
+}
+
+function conectar() {
+  clearTimeout(E.timerReintento);
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  let ws;
+  try { ws = new WebSocket(`${proto}://${location.host}/ws`); }
+  catch (e) { alCerrar(); return; }
+  E.ws = ws; E.nombreProbado = false; E.esperandoNombre = false;
+  ws.onmessage = (ev) => recibir(String(ev.data));
+  ws.onclose = () => { if (E.ws === ws) alCerrar(); };
+  ws.onerror = () => {};
+}
+
+function alCerrar() {
+  clearInterval(E.latido);
+  const estabaDentro = E.registrado;
+  E.registrado = false; E.ws = null; E.token = "";
+  if (!E.quiere) return;
+  if (!E.entro) {   // no llegó a entrar: vuelve al formulario
+    E.quiere = false;
+    ocupado(false);
+    loginError("No se pudo conectar. Comprueba que el servidor está en marcha.");
+    return;
+  }
+  estadoVisual("reconectando");
+  if (estabaDentro) avisoGeneral("Conexión perdida. Reintentando…");
+  E.reintentos++;
+  E.timerReintento = setTimeout(conectar, Math.min(10000, 1500 * E.reintentos));
+}
+
+function estadoVisual(e) {
+  const nodo = $("estado");
+  nodo.dataset.e = e;
+  nodo.textContent = e === "linea" ? "En línea" : e === "reconectando" ? "Reconectando…" : "Sin conexión";
+}
+
+function ocupado(si) {
+  $("login-boton").disabled = si;
+  $("login-boton").textContent = si ? "Conectando…" : (E.esperandoNombre ? "Elegir nombre" : "Entrar");
+}
+function loginError(texto) { $("login-error").textContent = texto || ""; }
+
+function recibir(linea) {
+  if (linea.startsWith("@@")) { control(linea); return; }
+  if (!E.registrado) { fasesLogin(linea); return; }
+  recibirChat(linea);
+}
+
+function fasesLogin(linea) {
+  if (linea === "CONTRASENA") { enviar("/clave " + E.clave); return; }
+  if (linea.includes("CONTRASENA_INCORRECTA")) {
+    E.quiere = false;
+    ocupado(false);
+    loginError("La contraseña no es correcta.");
+    return;
+  }
+  if (RE_PIDE_NOMBRE.test(linea)) {
+    const candidato = E.nombreProbado ? "" : (E.nombre || E.nombreElegido);
+    if (candidato) { E.nombreProbado = true; enviar(candidato); return; }
+    if (E.entro) { E.quiere = false; }   // en una reconexión no se puede pedir nada: vuelve al formulario
+    E.esperandoNombre = true;
+    ocupado(false);
+    $("nota-nombre").textContent = linea.replace(/ Escribe tu nombre:$/, "");
+    loginError("");
+    $("login-nombre").focus();
+    mostrarLogin();
+    return;
+  }
+  const m = RE_HOLA.exec(linea);
+  if (m) entrar(m[1]);
+}
+
+function entrar(nombre) {
+  const reconexion = E.entro;
+  if (E.recordar) { guardar("recordar", "1"); guardar("clave", E.clave); guardar("nombre", E.nombreElegido); }
+  E.registrado = true; E.entro = true; E.reintentos = 0; E.nombre = nombre; E.esperandoNombre = false;
+  $("vista-login").hidden = true;
+  $("app").hidden = false;
+  estadoVisual("linea");
+  clearInterval(E.latido);
+  E.latido = setInterval(() => enviar(" "), 25000);
+  E.reconectado = reconexion;   // el aviso sale cuando llega el historial, que sustituye lo que había
+  pintarTodo();
+  pedirArchivos();
+  if (!matchMedia("(pointer: coarse)").matches) $("entrada").focus();
+}
+
+function mostrarLogin() {
+  $("app").hidden = true;
+  $("vista-login").hidden = false;
+}
+
+/* =============================================================== mensajes del servidor */
+function control(linea) {
+  const i = linea.indexOf(" ");
+  const tipo = i < 0 ? linea : linea.slice(0, i);
+  const resto = i < 0 ? "" : linea.slice(i + 1);
+  try {
+    if (tipo === "@@COLOR") {
+      E.colores = JSON.parse(resto);
+      pintarPersonas(); pintarCabecera(); pintarHoja();
+    } else if (tipo === "@@HISTORIAL_INI") {
+      E.cargandoHist = true;
+      E.convs.get(GENERAL).mensajes = [];
+    } else if (tipo === "@@HISTORIAL_FIN") {
+      E.cargandoHist = false;
+      const general = E.convs.get(GENERAL);
+      if (general.mensajes.length) general.mensajes.push({ tipo: "sis", hora: ahora(), texto: "Hasta aquí, lo que se habló antes de que entraras" });
+      if (E.reconectado) general.mensajes.push({ tipo: "sis", hora: ahora(), texto: "Reconectado" });
+      E.reconectado = false;
+      pintarConversaciones();
+      if (E.activa === GENERAL) pintarHoja();
+    } else if (tipo === "@@TOKEN") {
+      E.token = resto.trim();
+    } else if (tipo === "@@ARCHIVOS") {
+      E.archivos = JSON.parse(resto);
+      pintarArchivos();
+    }
+  } catch (e) { /* una línea de control mal formada no debe romper el chat */ }
+}
+
+function recibirChat(linea) {
+  let m;
+  if ((m = RE_PRIV.exec(linea))) {
+    const [, hora, direccion, quien, texto] = m;
+    // "para X" es el eco de lo que has enviado tú; "de X" es lo que te escriben
+    const c = abrirPrivado(quien, direccion === "para");
+    if (direccion === "para") nuevoMensaje(c.clave, { tipo: "msg", hora, quien: E.nombre, texto, yo: true });
+    else {
+      nuevoMensaje(c.clave, { tipo: "msg", hora, quien, texto, ping: true });
+      avisar(`${quien}: ${plano(texto)}`, true, `Mensaje directo de ${quien}`, c.clave);
+    }
+    return;
+  }
+  if ((m = RE_CHAT.exec(linea))) {
+    const [, hora, quien, texto] = m;
+    if (E.cargandoHist) {   // mensajes anteriores: se guardan sin avisos ni contadores
+      E.convs.get(GENERAL).mensajes.push({ tipo: "msg", hora, quien, texto, yo: esYo(quien) });
+      return;
+    }
+    const ping = mencionaAlUsuario(texto);
+    nuevoMensaje(GENERAL, { tipo: "msg", hora, quien, texto, ping });
+    avisar(`${quien}: ${plano(texto)}`, ping, ping ? `${quien} te ha mencionado` : "Nuevo mensaje", GENERAL);
+    return;
+  }
+  if (!linea.startsWith("*** ")) { aviso(linea); return; }
+
+  const texto = linea.replace(/^\*\*\* /, "").replace(/ \*\*\*$/, "");
+  if (RE_AYUDA.test(linea)) { aviso(AYUDA); return; }
+  if ((m = RE_NICK.exec(linea))) {
+    const [, viejo, nuevo] = m;
+    if (esYo(viejo)) E.nombre = nuevo;
+    renombrarConv(viejo, nuevo);
+    avisoGeneral(texto, nuevo);
+    pintarTodo();
+    return;
+  }
+  if ((m = RE_CONEXION.exec(linea))) { avisoGeneral(texto, m[1]); pintarCabecera(); return; }
+  if (RE_SUBIDA.test(linea)) { avisoGeneral(texto); pedirArchivos(); return; }
+  if (RE_RECIBIDO.test(linea)) { aviso(texto); pedirArchivos(); return; }
+  if ((m = RE_NO_HAY.exec(linea))) { aviso(texto, claveDe(m[1])); return; }
+  aviso(texto);
+}
+
+/* =============================================================== enviar */
+function enviarTexto(original) {
+  let texto = original.trim();
+  if (!texto) return;
+  E.historial.push(texto);
+  E.pos = E.historial.length;
+  if (!E.registrado) { aviso("No estás conectado"); return; }
+  const variasLineas = /[\r\n]/.test(texto);
+  texto = texto.replace(/\r\n|\r|\n/g, NL);
+  // un comando es de una sola línea; código como "// comentario" o varias líneas va como mensaje
+  if (texto.startsWith("/") && !variasLineas && !/^\/[\/*]/.test(texto)) { comando(texto); return; }
+  if (texto.startsWith("/")) texto = ANCHO_INVISIBLE + texto;
+  const c = E.convs.get(E.activa);
+  if (c.privado) {
+    // en una conversación privada lo que escribes solo le llega a esa persona
+    const prefijo = `/privado ${c.nombre} `;
+    const limite = MAX_MSG - prefijo.length;
+    if (texto.length > limite) { texto = texto.slice(0, limite); aviso(`Mensaje recortado a ${limite} caracteres`); }
+    if (!enviar(prefijo + texto)) aviso("No se pudo enviar: la conexión se ha cerrado");
+    return;   // se muestra cuando el servidor lo confirma, así no sale si la persona no está
+  }
+  if (texto.length > MAX_MSG) { texto = texto.slice(0, MAX_MSG); aviso(`Mensaje recortado a ${MAX_MSG} caracteres`); }
+  if (!enviar(texto)) { aviso("No se pudo enviar: la conexión se ha cerrado"); return; }
+  nuevoMensaje(GENERAL, { tipo: "msg", hora: ahora(), quien: E.nombre, texto, yo: true });
+}
+
+function comando(texto) {
+  const cmd = texto.split(/\s+/)[0].toLowerCase();
+  if (cmd === "/ayuda") { aviso(AYUDA); return; }
+  if (cmd === "/silencio") {
+    cambiarNotif(E.notif === "nada" ? "todo" : "nada");
+    aviso(E.notif === "nada" ? "Avisos desactivados" : "Avisos activados");
+    return;
+  }
+  if (["/archivos", "/descargar", "/subir"].includes(cmd)) { aviso("Los archivos se manejan con el botón Archivos"); return; }
+  if (!enviar(texto)) aviso("No se pudo enviar: la conexión se ha cerrado");
+}
+
+/* =============================================================== avisos (pestaña, sonido, notificación) */
+let audio = null;
+function iniciarAudio() {
+  if (audio) return;
+  try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
+}
+document.addEventListener("pointerdown", iniciarAudio, { once: true });
+document.addEventListener("keydown", iniciarAudio, { once: true });
+
+function pitar() {
+  if (!audio) return;
+  try {
+    if (audio.state === "suspended") audio.resume();
+    const osc = audio.createOscillator(), vol = audio.createGain();
+    osc.type = "sine"; osc.frequency.value = 880;
+    vol.gain.setValueAtTime(0.0001, audio.currentTime);
+    vol.gain.exponentialRampToValueAtTime(0.06, audio.currentTime + 0.01);
+    vol.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.18);
+    osc.connect(vol); vol.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + 0.2);
+  } catch (e) {}
+}
+
+function actualizarTitulo() {
+  document.title = (E.sinLeerTitulo ? `(${E.sinLeerTitulo}) ` : "") + "Chat de clase";
+}
+
+function avisar(texto, ping, titulo, clave) {
+  if (E.notif === "nada" || (E.notif === "pings" && !ping)) return;
+  const fuera = document.hidden || !document.hasFocus();
+  if (!fuera && clave === E.activa) return;    // ya lo estás viendo
+  if (fuera) { E.sinLeerTitulo++; actualizarTitulo(); }
+  pitar();
+  if (fuera && "Notification" in window && Notification.permission === "granted") {
+    try { new Notification(titulo, { body: texto, tag: "chat-de-clase" }); } catch (e) {}
+  }
+}
+function alVolver() {
+  if (!document.hidden) { E.sinLeerTitulo = 0; actualizarTitulo(); }
+}
+window.addEventListener("focus", alVolver);
+document.addEventListener("visibilitychange", alVolver);
+
+function cambiarNotif(modo) {
+  E.notif = modo;
+  guardar("notif", modo);
+  $("notif").value = modo;
+}
+
+/* =============================================================== archivos */
+function tamanoLegible(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+const urlArchivo = (nombre, descargar) =>
+  `/archivo/${encodeURIComponent(nombre)}?t=${encodeURIComponent(E.token)}${descargar ? "&descargar=1" : ""}`;
+
+function pedirArchivos() { enviar("/archivos"); }
+
+function pintarArchivos() {
+  const caja = $("lista-archivos");
+  caja.replaceChildren();
+  const nombres = Object.keys(E.archivos).sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+  if (!nombres.length) { caja.append(el("p", "vacio", "Todavía no hay archivos. Sube el primero.")); }
+  for (const n of nombres) {
+    const b = el("button", "archivo");
+    b.type = "button";
+    if (n === E.archivoSel) b.setAttribute("aria-current", "true");
+    const ext = n.includes(".") ? n.slice(n.lastIndexOf(".")).toLowerCase() : "";
+    b.append(el("span", "ext", ext), el("span", "nombre", n), el("span", "tam", tamanoLegible(E.archivos[n])));
+    b.addEventListener("click", () => verArchivo(n));
+    caja.append(b);
+  }
+  if (E.archivoSel && !(E.archivoSel in E.archivos)) { E.archivoSel = null; $("vista").hidden = true; }
+}
+
+async function verArchivo(nombre) {
+  E.archivoSel = nombre;
+  pintarArchivos();
+  const vista = $("vista"), cuerpo = $("vista-cuerpo");
+  vista.hidden = false;
+  $("vista-nombre").textContent = nombre;
+  $("vista-descargar").href = urlArchivo(nombre, true);
+  $("vista-descargar").setAttribute("download", nombre);
+  const ext = nombre.slice(nombre.lastIndexOf(".")).toLowerCase();
+  cuerpo.replaceChildren(el("p", "vacio", "Cargando…"));
+  if (ext === ".png" || ext === ".jpg") {
+    const img = new Image();
+    img.alt = nombre;
+    img.onload = () => { if (E.archivoSel === nombre) cuerpo.replaceChildren(img); };
+    img.onerror = () => { if (E.archivoSel === nombre) cuerpo.replaceChildren(el("p", "vacio", "No se pudo cargar la imagen.")); };
+    img.src = urlArchivo(nombre, false);
+    return;
+  }
+  try {
+    const r = await fetch(urlArchivo(nombre, false), { headers: { "X-Token": E.token } });
+    if (!r.ok) throw new Error(String(r.status));
+    let texto = await r.text();
+    if (E.archivoSel !== nombre) return;
+    if (texto.length > 300000) texto = texto.slice(0, 300000) + "\n… (se muestra solo el principio; descárgalo para verlo entero)";
+    cuerpo.replaceChildren(el("pre", "", texto));
+  } catch (e) {
+    if (E.archivoSel === nombre) cuerpo.replaceChildren(el("p", "vacio", "No se pudo cargar el archivo."));
+  }
+}
+
+function mensajeSubida(texto) { $("estado-subida").textContent = texto; }
+
+function subirArchivo(f) {
+  if (!f) return;
+  const punto = f.name.lastIndexOf(".");
+  const ext = punto < 0 ? "" : f.name.slice(punto).toLowerCase();
+  mostrarArchivos(true);
+  if (!EXTENSIONES.includes(ext)) { mensajeSubida("Tipo no permitido: solo .py, .java, .txt, .jpg y .png."); return; }
+  if (f.size > MAX_ARCHIVO) { mensajeSubida("El archivo supera el máximo de 10 MB."); return; }
+  if (!E.token) { mensajeSubida("Todavía no estás conectado."); return; }
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", `/subir?nombre=${encodeURIComponent(f.name)}&t=${encodeURIComponent(E.token)}`);
+  xhr.setRequestHeader("Content-Type", "application/octet-stream");
+  const barra = $("progreso");
+  barra.hidden = false; barra.value = 0;
+  mensajeSubida(`Subiendo ${f.name}…`);
+  xhr.upload.onprogress = (ev) => { if (ev.lengthComputable) barra.value = ev.loaded / ev.total; };
+  xhr.onload = () => {
+    barra.hidden = true;
+    let r = {};
+    try { r = JSON.parse(xhr.responseText); } catch (e) {}
+    if (xhr.status === 200) { mensajeSubida(`Subido: ${r.nombre || f.name}`); pedirArchivos(); }
+    else mensajeSubida(r.error || `No se pudo subir (error ${xhr.status}).`);
+  };
+  xhr.onerror = () => { barra.hidden = true; mensajeSubida("No se pudo subir: se perdió la conexión."); };
+  xhr.send(f);
+}
+
+function mostrarArchivos(si) {
+  $("panel-archivos").hidden = !si;
+  if (si) pedirArchivos();
+}
+
+/* =============================================================== escritura: historial y @menciones */
+function completarMencion() {
+  const entrada = $("entrada");
+  const texto = entrada.value, cursor = entrada.selectionStart;
+  let c = E.compl;
+  if (c && c.texto === texto && c.cursor === cursor) {
+    c.i = (c.i + 1) % c.opciones.length;
+  } else {
+    const m = /(?:^|\s)@([^@\s]*)$/.exec(texto.slice(0, cursor));
+    if (!m) return false;
+    const prefijo = m[1].toLowerCase();
+    const opciones = [...new Set(Object.keys(E.colores))]
+      .filter((n) => n.toLowerCase().startsWith(prefijo) && !esYo(n))
+      .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
+    if (!opciones.length) return true;
+    c = E.compl = { inicio: cursor - m[1].length, resto: texto.slice(cursor), opciones, i: 0 };
+  }
+  const puesto = c.opciones[c.i] + " ";
+  const nuevo = texto.slice(0, c.inicio) + puesto + c.resto;
+  entrada.value = nuevo;
+  const pos = c.inicio + puesto.length;
+  entrada.setSelectionRange(pos, pos);
+  autoajustar();
+  c.texto = nuevo; c.cursor = pos;
+  return true;
+}
+
+function autoajustar() {
+  const e = $("entrada");
+  e.style.height = "auto";
+  e.style.height = Math.min(Math.max(e.scrollHeight + 2, 44), 212) + "px";
+}
+$("entrada").addEventListener("input", autoajustar);
+
+$("entrada").addEventListener("keydown", (ev) => {
+  const entrada = ev.currentTarget;
+  if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); $("form-enviar").requestSubmit(); return; }
+  if (ev.key === "Tab" && !ev.shiftKey) { if (completarMencion()) ev.preventDefault(); return; }
+  // las flechas recorren el historial solo si el cursor no tiene otra línea por recorrer
+  if (ev.key === "ArrowUp" && E.historial.length && !entrada.value.slice(0, entrada.selectionStart).includes("\n")) {
+    ev.preventDefault();
+    E.pos = Math.max(0, E.pos - 1);
+    entrada.value = E.historial[E.pos] || "";
+    autoajustar();
+  } else if (ev.key === "ArrowDown" && E.historial.length && !entrada.value.slice(entrada.selectionEnd).includes("\n")) {
+    ev.preventDefault();
+    E.pos = Math.min(E.historial.length, E.pos + 1);
+    entrada.value = E.historial[E.pos] || "";
+    autoajustar();
+  }
+});
+
+// Ctrl+V con una captura en el portapapeles: se sube como archivo
+$("entrada").addEventListener("paste", (ev) => {
+  const imagen = ev.clipboardData && [...ev.clipboardData.files].find((f) => f.type === "image/png" || f.type === "image/jpeg");
+  if (!imagen) return;
+  ev.preventDefault();
+  const hora = new Date().toTimeString().slice(0, 8).replace(/:/g, "");
+  subirArchivo(new File([imagen], `captura-${hora}${imagen.type === "image/png" ? ".png" : ".jpg"}`, { type: imagen.type }));
+});
+
+/* =============================================================== eventos de la interfaz */
+$("form-login").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  loginError("");
+  if (E.esperandoNombre && E.ws) {
+    const n = $("login-nombre").value.trim();
+    if (!n) { loginError("Escribe un nombre."); return; }
+    E.nombreElegido = n; E.nombreProbado = true; E.esperandoNombre = false;
+    enviar(n);
+    ocupado(true);
+    return;
+  }
+  E.clave = $("login-clave").value;
+  E.nombreElegido = $("login-nombre").value.trim();
+  if (!E.clave) { loginError("Escribe la contraseña."); return; }
+  E.recordar = $("login-recordar").checked;
+  E.quiere = true; E.entro = false;
+  ocupado(true);
+  conectar();
+});
+
+$("form-enviar").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const entrada = $("entrada");
+  const texto = entrada.value;
+  entrada.value = "";
+  autoajustar();
+  E.compl = null;
+  enviarTexto(texto);
+});
+
+$("btn-nuevos").addEventListener("click", () => {
+  const hoja = $("hoja");
+  hoja.scrollTop = hoja.scrollHeight;
+});
+$("hoja").addEventListener("scroll", () => {
+  const hoja = $("hoja");
+  if (hoja.scrollHeight - hoja.scrollTop - hoja.clientHeight < 60) { E.nuevos = 0; $("btn-nuevos").hidden = true; }
+});
+
+$("btn-tema").addEventListener("click", () => {
+  const nuevo = document.documentElement.dataset.tema === "oscuro" ? "claro" : "oscuro";
+  document.documentElement.dataset.tema = nuevo;
+  guardar("tema", nuevo);
+  actualizarBotonTema();
+  if (!$("app").hidden) pintarTodo();   // los colores de los nombres dependen del tema
+});
+function actualizarBotonTema() {
+  $("btn-tema").textContent = document.documentElement.dataset.tema === "oscuro" ? "Tema claro" : "Tema oscuro";
+}
+
+$("notif").value = E.notif;
+$("notif").addEventListener("change", (ev) => {
+  cambiarNotif(ev.target.value);
+  if (E.notif !== "nada" && "Notification" in window && Notification.permission === "default") {
+    try { Notification.requestPermission(); } catch (e) {}
+  }
+});
+
+$("color-input").addEventListener("change", (ev) => {
+  if (!enviar(`/color ${ev.target.value}`)) aviso("No se pudo cambiar el color: no hay conexión");
+});
+
+$("btn-riel").addEventListener("click", () => $("riel").classList.toggle("abierto"));
+$("btn-archivos").addEventListener("click", () => mostrarArchivos($("panel-archivos").hidden));
+$("cerrar-archivos").addEventListener("click", () => mostrarArchivos(false));
+$("btn-subir").addEventListener("click", () => $("input-archivo").click());
+$("input-archivo").addEventListener("change", (ev) => { subirArchivo(ev.target.files[0]); ev.target.value = ""; });
+
+let arrastres = 0;
+window.addEventListener("dragenter", (ev) => {
+  if (!ev.dataTransfer || ![...ev.dataTransfer.types].includes("Files") || $("app").hidden) return;
+  arrastres++; $("soltar").hidden = false;
+});
+window.addEventListener("dragleave", () => { arrastres = Math.max(0, arrastres - 1); if (!arrastres) $("soltar").hidden = true; });
+window.addEventListener("dragover", (ev) => { if ($("app").hidden === false) ev.preventDefault(); });
+window.addEventListener("drop", (ev) => {
+  ev.preventDefault();
+  arrastres = 0; $("soltar").hidden = true;
+  if ($("app").hidden) return;
+  const f = ev.dataTransfer && ev.dataTransfer.files[0];
+  if (f) subirArchivo(f);
+});
+
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape") return;
+  $("riel").classList.remove("abierto");
+  if (!$("panel-archivos").hidden && matchMedia("(max-width: 860px)").matches) mostrarArchivos(false);
+});
+
+/* =============================================================== arranque */
+function olvidar() {
+  for (const k of ["recordar", "clave", "nombre"]) { try { localStorage.removeItem(k); } catch (e) {} }
+}
+$("btn-salir").addEventListener("click", () => {
+  E.quiere = false;
+  clearInterval(E.latido);
+  try { if (E.ws) E.ws.close(); } catch (e) {}
+  olvidar();
+  location.reload();
+});
+
+actualizarBotonTema();
+if (leer("recordar") === "1" && leer("clave")) {
+  $("login-clave").value = leer("clave");
+  $("login-nombre").value = leer("nombre") || "";
+  $("login-recordar").checked = true;
+  $("login-boton").focus();
+} else {
+  $("login-clave").focus();
+}
+</script>
+</body>
+</html>
